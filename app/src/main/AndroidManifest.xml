@@ -1,0 +1,56 @@
+<!-- app/src/main/AndroidManifest.xml -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- UDP/网络套接字需要 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- 前台服务与类型 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+        tools:targetApi="u" />
+
+    <!-- Android 13+ 通知权限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 使用情况访问（需用户在设置中手动授权） -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <application
+        android:allowBackup="true"
+        android:label="ClipMon"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ClipMon2">
+
+        <service
+            android:name=".ClipboardMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 新增：敏感复制弹窗页（前台时展示） -->
+        <activity
+            android:name=".SensitivePromptActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.ClipMon2" />
+
+        <!-- 新增：通知 Action 接收器（后台时点通知按钮回传决策） -->
+        <receiver
+            android:name=".ActionReceiver"
+            android:exported="false" />
+
+    </application>
+</manifest>
