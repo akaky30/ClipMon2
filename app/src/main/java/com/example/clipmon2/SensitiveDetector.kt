@@ -1,58 +1,56 @@
 package com.example.clipmon2
 
+/**
+ * 输入敏感信息检测与打码
+ * - 手机号：大陆 11 位，以 1[3-9] 开头
+ * - 身份证：18 位，包含出生日期格式校验，末位可为 X/x
+ * - 银行卡：19 位纯数字
+ */
 object SensitiveDetector {
-    // 简化：大陆手机号 1[3-9] + 9 位；根据需要可扩展更多地区
-    private val phoneCN = Regex("""(?<!\d)1[3-9]\d{9}(?!\d)""")
 
-    // 将文本中的数字提取，用 Luhn 算法校验银行卡（13-19 位）
-    fun containsSensitive(s: String): Boolean = isPhone(s) || isCard(s)
+    // 11位手机号（更严格：1[3-9] 开头）
+    private val REGEX_PHONE11 = Regex("(?<!\\d)1[3-9]\\d{9}(?!\\d)")
 
-    fun isPhone(s: String): Boolean =
-        phoneCN.containsMatchIn(s.replace(" ", "").replace("-", ""))
+    // 18位二代身份证（地区码6 + 年4 + 月2 + 日2 + 顺序码3 + 校验位），简单格式校验
+    private val REGEX_ID18 = Regex(
+        "(?<!\\d)" +
+                "[1-9]\\d{5}" +                 // 地区码
+                "(18|19|20)\\d{2}" +            // 年：1800-2099
+                "(0[1-9]|1[0-2])" +             // 月：01-12
+                "(0[1-9]|[12]\\d|3[01])" +      // 日：01-31
+                "\\d{3}" +                      // 顺序码
+                "[\\dXx]" +                     // 校验位
+                "(?!\\d)"
+    )
 
-    fun isCard(s: String): Boolean {
-        val digits = s.filter { it.isDigit() }
-        if (digits.length !in 13..19) return false
-        return luhn(digits)
+    // 19位银行卡号（按你的需求限定为 19 位；如需 16-19 可改为 \\d{16,19}）
+    private val REGEX_BANK19 = Regex("(?<!\\d)\\d{19}(?!\\d)")
+
+    /** 单项判断 */
+    fun containsPhone11(text: String) = REGEX_PHONE11.containsMatchIn(text)
+    fun containsId18(text: String) = REGEX_ID18.containsMatchIn(text)
+    fun containsBank19(text: String) = REGEX_BANK19.containsMatchIn(text)
+
+    /** 组合判断（输入时提醒用它即可） */
+    fun containsSensitive(text: String): Boolean =
+        containsPhone11(text) || containsId18(text) || containsBank19(text)
+
+    /** 将匹配到的片段打码替换 */
+    fun maskWithin(text: String): String {
+        var s = text
+        // 手机号：保留 3+4
+        s = s.replace(REGEX_PHONE11) { maskRun(it.value, keepLeft = 3, keepRight = 4) }
+        // 身份证：保留 3+2（可按需调整为 6+4 等）
+        s = s.replace(REGEX_ID18) { maskRun(it.value, keepLeft = 3, keepRight = 2) }
+        // 银行卡：保留 6+4（常见展示方式）
+        s = s.replace(REGEX_BANK19) { maskRun(it.value, keepLeft = 6, keepRight = 4) }
+        return s
     }
 
-    private fun luhn(num: String): Boolean {
-        var sum = 0
-        var alt = false
-        for (i in num.length - 1 downTo 0) {
-            var n = num[i] - '0'
-            if (alt) {
-                n *= 2
-                if (n > 9) n -= 9
-            }
-            sum += n
-            alt = !alt
-        }
-        return sum % 10 == 0
-    }
-
-    // 将文本中的手机号/卡号片段替换为打码版本
-    fun maskWithin(s: String): String {
-        // 先打码手机号
-        var out = phoneCN.replace(s) { m ->
-            maskNumber(m.value)
-        }
-        // 再打码疑似卡号（对每个连续数字段尝试 Luhn）
-        val numChunk = Regex("""\d{13,19}""")
-        out = numChunk.replace(out) { m ->
-            if (luhn(m.value)) maskNumber(m.value) else m.value
-        }
-        return out
-    }
-
-    private fun maskNumber(num: String): String {
-        val clean = num.filter { it.isDigit() }
-        val n = clean.length
-        if (n <= 6) return "*".repeat(n)
-        val head = clean.take(3)
-        val tail = clean.takeLast(4)
-        val masked = head + "*".repeat(n - 7) + tail
-        // 尽量保留原格式的空格/连字符，这里做简化直接无分隔返回
-        return masked
+    private fun maskRun(run: String, keepLeft: Int, keepRight: Int): String {
+        val n = run.length
+        if (n <= keepLeft + keepRight) return "*".repeat(n)
+        val mid = n - keepLeft - keepRight
+        return run.take(keepLeft) + "*".repeat(mid) + run.takeLast(keepRight)
     }
 }

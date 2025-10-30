@@ -3,125 +3,114 @@ package com.example.clipmon2
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Build
 import android.os.IBinder
+import android.text.TextUtils
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 
-class ClipboardMonitorService : Service() {
+/**
+ * 复制时监控剪贴板变化：
+ * - 写入“最近事件”到 EventBus（用于主界面展示与导出）
+ * - 保留扩展点：检测到敏感数据后如需弹窗/通知，可在 hasSensitive 分支添加
+ */
+class ClipboardMonitorService : Service(), ClipboardManager.OnPrimaryClipChangedListener {
+
+    companion object {
+        private const val TAG = "ClipMon-ClipService"
+        private const val CHANNEL_ID = "clipmon_foreground"
+        private const val CHANNEL_NAME = "ClipMon 前台服务"
+        private const val NOTIF_ID = 10001
+        private const val DUP_WINDOW_MS = 1500L // 1.5 秒内相同文本不重复记一条
+    }
 
     private lateinit var clipboard: ClipboardManager
-    private val tag = "ClipMon"
-
-    private val channelId = "clipmon_monitor"
-    private val channelName = "剪贴板监控"
-    private val notifIdForeground = 1001
-    private val notifIdAlert = 1002
-
-    private val listener = ClipboardManager.OnPrimaryClipChangedListener {
-        try {
-            val clip: ClipData? = clipboard.primaryClip
-            val item = clip?.getItemAt(0)
-            val textStr = item?.coerceToText(this)?.toString() ?: return@OnPrimaryClipChangedListener
-
-            val hasSensitive = SensitiveDetector.containsSensitive(textStr)
-            if (hasSensitive) {
-                Log.d(tag, "Clipboard sensitive: ${textStr.take(60)}")
-                val masked = SensitiveDetector.maskWithin(textStr)
-                showSensitiveNotification(masked)
-            } else {
-                Log.d(tag, "Clipboard normal: ${textStr.take(60)}")
-            }
-        } catch (t: Throwable) {
-            Log.e(tag, "onPrimaryClipChanged error", t)
-        }
-    }
+    private var lastText: String? = null
+    private var lastTs: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
-        ensureChannel()
         clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.addPrimaryClipChangedListener(listener)
-        Log.d(tag, "ClipboardMonitorService created")
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(notifIdForeground, buildForegroundNotification())
-        return START_STICKY
+        clipboard.addPrimaryClipChangedListener(this)
+        startForegroundInternal()
+        Log.d(TAG, "service created & startedForeground")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        try { clipboard.removePrimaryClipChangedListener(listener) } catch (_: Throwable) {}
-        NotificationManagerCompat.from(this).cancel(notifIdAlert)
-        Log.d(tag, "ClipboardMonitorService destroyed")
+        kotlin.runCatching { clipboard.removePrimaryClipChangedListener(this) }
+        Log.d(TAG, "service destroyed")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val nm = getSystemService(NotificationManager::class.java)
-            val ch = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_DEFAULT)
-            ch.enableLights(false)
-            ch.enableVibration(false)
-            ch.lightColor = Color.BLUE
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 粘性：被系统回收后尽量重启
+        return START_STICKY
+    }
+
+    // 剪贴板变化回调
+    override fun onPrimaryClipChanged() {
+        val clip: ClipData = clipboard.primaryClip ?: return
+        if (clip.itemCount <= 0) return
+
+        val textStr = clip.getItemAt(0).coerceToText(this)?.toString()?.trim() ?: ""
+        if (textStr.isEmpty()) return
+
+        // 简单防抖（同内容短时间重复复制就不再写事件）
+        val now = System.currentTimeMillis()
+        if (TextUtils.equals(textStr, lastText) && (now - lastTs) < DUP_WINDOW_MS) return
+        lastText = textStr
+        lastTs = now
+
+        // 敏感判定（对应你项目里的 SensitiveDetector）
+        val containsPhone = SensitiveDetector.containsPhone11(textStr)
+        val containsId18 = SensitiveDetector.containsId18(textStr)
+        val containsBank19 = SensitiveDetector.containsBank19(textStr)
+        val hasSensitive = containsPhone || containsId18 || containsBank19
+
+        // === 正确写入事件：使用 EventBus.push(ClipEvent) ===
+        try {
+            EventBus.push(
+                ClipEvent(
+                    ts = now,
+                    // 你在 ClipEvent.kt 里备注了 "WRITE" / "READ"，复制=WRITE 更贴切
+                    type = if (hasSensitive) "WRITE(含敏感)" else "WRITE",
+                    preview = textStr.take(120),
+                    rawLen = textStr.length,
+                    containsPhone = containsPhone,
+                    containsId = containsId18,
+                    topApp = null // 如需记录前台 App，可扩展 UsageStats 获取
+                )
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "EventBus.push failed: ${t.message}")
+        }
+
+        // 如需复制后也弹交互（清空/打码），可在此添加：
+        // if (hasSensitive) { startActivity(...) 或 发通知 }
+    }
+
+    // —————————— 前台服务 ——————————
+    private fun startForegroundInternal() {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(
+                CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW
+            )
             nm.createNotificationChannel(ch)
         }
-    }
-
-    private fun buildForegroundNotification(): Notification {
-        val pi = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
-        )
-        return NotificationCompat.Builder(this, channelId)
+        val notif: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("ClipMon 正在监控剪贴板")
+            .setContentText("复制敏感信息时会提示，并记录最近事件")
             .setSmallIcon(android.R.drawable.stat_notify_more)
-            .setContentTitle("ClipMon 正在监控")
-            .setContentText("监控复制事件与输入中的敏感信息")
-            .setContentIntent(pi)
             .setOngoing(true)
             .build()
-    }
-
-    private fun showSensitiveNotification(maskedText: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-
-        val maskIntent = Intent(this, ActionReceiver::class.java)
-            .setAction(ActionReceiver.ACTION_MASK)
-            .putExtra(ActionReceiver.EXTRA_MASKED_TEXT, maskedText)
-
-        val clearIntent = Intent(this, ActionReceiver::class.java)
-            .setAction(ActionReceiver.ACTION_CLEAR)
-
-        val maskPI = PendingIntent.getBroadcast(
-            this, 1, maskIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
-        )
-        val clearPI = PendingIntent.getBroadcast(
-            this, 2, clearIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
-        )
-
-        val notif = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(android.R.drawable.stat_notify_more)
-            .setContentTitle("检测到可能的敏感内容")
-            .setContentText("你可以选择打码复制或清空剪贴板")
-            .addAction(0, "打码复制", maskPI)
-            .addAction(0, "清空", clearPI)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-
-        nm.notify(notifIdAlert, notif)
+        startForeground(NOTIF_ID, notif)
     }
 }

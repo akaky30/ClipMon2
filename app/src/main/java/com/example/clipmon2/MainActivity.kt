@@ -44,26 +44,60 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 val events by EventBus.events.collectAsState()
                 Column(Modifier.fillMaxSize().padding(16.dp)) {
+
+                    // 行1：开始/停止
                     Row {
-                        Button(onClick = { onStartMonitorClicked() }, enabled = !monitoring) {
-                            Text("开始监控")
-                        }
+                        Button(
+                            onClick = { onStartMonitorClicked() },
+                            enabled = !monitoring,
+                            modifier = Modifier.height(44.dp)
+                        ) { Text("开始监控") }
+
                         Spacer(Modifier.width(12.dp))
-                        Button(onClick = { stopMonitor() }, enabled = monitoring) {
-                            Text("停止")
-                        }
+
+                        Button(
+                            onClick = { stopMonitor() },
+                            enabled = monitoring,
+                            modifier = Modifier.height(44.dp)
+                        ) { Text("停止") }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Row {
-                        Button(onClick = { openUsageAccessSettings() }) { Text("授予使用情况访问") }
-                        Spacer(Modifier.width(12.dp))
-                        Button(onClick = { openAccessibilitySettings() }) { Text("开启无障碍") }
-                        Spacer(Modifier.width(12.dp))
-                        Button(onClick = { exportCsv() }) { Text("导出CSV") }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // 行2：纵向两个整宽按钮（授予使用情况访问 -> 开启无障碍）
+                    Column {
+                        Button(
+                            onClick = { openUsageAccessSettings() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                        ) { Text("授予使用情况访问") }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        Button(
+                            onClick = { openAccessibilitySettings() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                        ) { Text("开启无障碍") }
                     }
-                    Spacer(Modifier.height(8.dp))
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // 行3：导出 CSV
+                    Button(
+                        onClick = { exportCsv() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                    ) { Text("导出CSV") }
+
+                    Spacer(Modifier.height(12.dp))
+
                     Text("最近事件（上新在前）", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
+
                     LazyColumn(Modifier.weight(1f)) {
                         items(events) { e ->
                             Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
