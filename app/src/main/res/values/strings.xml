@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">ClipMon2</string>
+
+    <string name="acc_service_desc">实时检测输入中的敏感信息（手机号/银行卡号），提供打码或清空操作，不上传任何数据。</string>
 </resources>

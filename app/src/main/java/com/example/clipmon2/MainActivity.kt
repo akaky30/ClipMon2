@@ -57,6 +57,8 @@ class MainActivity : ComponentActivity() {
                     Row {
                         Button(onClick = { openUsageAccessSettings() }) { Text("授予使用情况访问") }
                         Spacer(Modifier.width(12.dp))
+                        Button(onClick = { openAccessibilitySettings() }) { Text("开启无障碍") }
+                        Spacer(Modifier.width(12.dp))
                         Button(onClick = { exportCsv() }) { Text("导出CSV") }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -118,7 +120,6 @@ class MainActivity : ComponentActivity() {
     private fun hasUsageAccess(): Boolean {
         val appOps = getSystemService(AppOpsManager::class.java)
         return try {
-            // 兼容旧系统：优先用 checkOpNoThrow（API19+稳定存在）
             val mode = appOps.checkOpNoThrow(
                 AppOpsManager.OPSTR_GET_USAGE_STATS,
                 android.os.Process.myUid(),
@@ -126,13 +127,16 @@ class MainActivity : ComponentActivity() {
             )
             mode == AppOpsManager.MODE_ALLOWED
         } catch (_: Throwable) {
-            // 兜底：如果方法不存在/异常，就返回 false
             false
         }
     }
 
     private fun openUsageAccessSettings() {
         startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun startMonitorServiceSafely() {

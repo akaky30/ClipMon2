@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- UDP/网络套接字需要 -->
+    <!-- UDP/网络套接字需要（若不需要可去掉） -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- 前台服务与类型 -->
@@ -19,16 +19,31 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- 可选：请求忽略电池优化（便于引导用户把应用加入白名单，提升存活率） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:allowBackup="true"
         android:label="ClipMon"
         android:supportsRtl="true"
         android:theme="@style/Theme.ClipMon2">
 
+        <!-- 剪贴板监控前台服务 -->
         <service
             android:name=".ClipboardMonitorService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
+
+        <!-- 无障碍服务（输入时提醒） -->
+        <service
+            android:name=".ClipMonAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/clipmon_accessibility_service" />
+        </service>
 
         <activity
             android:name=".MainActivity"
@@ -39,7 +54,7 @@
             </intent-filter>
         </activity>
 
-        <!-- 新增：敏感复制弹窗页（前台时展示） -->
+        <!-- 敏感复制弹窗页（如需在前台显示专门页面） -->
         <activity
             android:name=".SensitivePromptActivity"
             android:exported="false"
@@ -47,10 +62,9 @@
             android:excludeFromRecents="true"
             android:theme="@style/Theme.ClipMon2" />
 
-        <!-- 新增：通知 Action 接收器（后台时点通知按钮回传决策） -->
+        <!-- 通知 Action 接收器（后台点通知按钮回传决策） -->
         <receiver
             android:name=".ActionReceiver"
             android:exported="false" />
-
     </application>
 </manifest>
